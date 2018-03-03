@@ -72,7 +72,7 @@ module Pretty (
 
         -- ** Converting values into documents
         char, text, ftext, ptext, ztext, sizedText, zeroWidthText,
-        int, integer, float, double, rational,
+        int, integer, float, double, rational, hex,
 
         -- ** Simple derived documents
         semi, comma, colon, space, equals,
@@ -117,6 +117,7 @@ import BufWrite
 import FastString
 import Panic
 import System.IO
+import Numeric (showHex)
 
 --for a RULES
 import GHC.Base ( unpackCString# )
@@ -404,11 +405,18 @@ integer  :: Integer  -> Doc -- ^ @integer n = text (show n)@
 float    :: Float    -> Doc -- ^ @float n = text (show n)@
 double   :: Double   -> Doc -- ^ @double n = text (show n)@
 rational :: Rational -> Doc -- ^ @rational n = text (show n)@
+hex      :: Integer  -> Doc -- ^ @hex@ shows in hexadecimal using a base-2 number of digits
 int      n = text (show n)
 integer  n = text (show n)
 float    n = text (show n)
 double   n = text (show n)
 rational n = text (show n)
+hex      n = text padded
+    where
+    str = showHex n ""
+    strLen = max 1 (length str)
+    len = 2 ^ floor (logBase 2 (fromIntegral strLen :: Double))
+    padded = replicate (len - strLen) '0' ++ str
 
 parens       :: Doc -> Doc -- ^ Wrap document in @(...)@
 brackets     :: Doc -> Doc -- ^ Wrap document in @[...]@
