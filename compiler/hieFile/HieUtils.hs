@@ -63,7 +63,7 @@ resolveVisibility kind ty_args
       where
         ts' = go (extendTvSubst env tv t) res ts
 
-    go env (FunTy _ res) (t:ts) -- No type-class args in tycon apps
+    go env (FunTy _ _ res) (t:ts) -- No type-class args in tycon apps
       = (True,t) : (go env res ts)
 
     go env (TyVarTy tv) ts
@@ -81,7 +81,7 @@ hieTypeToIface = foldType go
     go (HLitTy l) = IfaceLitTy l
     go (HForAllTy ((n,k),af) t) = let b = (occNameFS $ getOccName n, k)
                                   in IfaceForAllTy (Bndr (IfaceTvBndr b) af) t
-    go (HFunTy a b) = IfaceFunTy a b
+    go (HFunTy a b) = IfaceFunTy undefined a b
     go (HQualTy pred b) = IfaceDFunTy pred b
     go (HCastTy a) = a
     go HCoercionTy = IfaceTyVar "<coercion type>"
@@ -145,7 +145,7 @@ getTypeIndex t
 
     go (TyVarTy v) = return $ HTyVarTy $ varName v
     go ty@(AppTy _ _) = do
-      let (head,args) = splitAppTys ty
+      let (head,args) = splitAppTys True ty
           visArgs = HieArgs $ resolveVisibility (typeKind head) args
       ai <- getTypeIndex head
       argsi <- mapM getTypeIndex visArgs
@@ -158,7 +158,7 @@ getTypeIndex t
       k <- getTypeIndex (varType v)
       i <- getTypeIndex t
       return $ HForAllTy ((varName v,k),a) i
-    go (FunTy a b) = do
+    go (FunTy _ a b) = do
       ai <- getTypeIndex a
       bi <- getTypeIndex b
       return $ if isPredTy a

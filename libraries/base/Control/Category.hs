@@ -1,3 +1,4 @@
+{-# LANGUAGE FlexibleInstances #-} -- TODO (csongor)
 {-# LANGUAGE Trustworthy #-}
 {-# LANGUAGE GADTs #-}
 {-# LANGUAGE NoImplicitPrelude #-}
@@ -51,7 +52,7 @@ class Category cat where
  #-}
 
 -- | @since 3.0
-instance Category (->) where
+instance Category (~>) where -- TODO (csongor): should do something about this.
     id = GHC.Base.id
     (.) = (GHC.Base..)
 

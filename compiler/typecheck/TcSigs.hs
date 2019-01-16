@@ -6,6 +6,7 @@
 
 {-# LANGUAGE CPP #-}
 {-# LANGUAGE TypeFamilies #-}
+{-# LANGUAGE ViewPatterns #-}
 
 module TcSigs(
        TcSigInfo(..),
@@ -262,7 +263,7 @@ no_anon_wc lty = go lty
       HsWildCardTy _                 -> False
       HsAppTy _ ty1 ty2              -> go ty1 && go ty2
       HsAppKindTy _ ty ki            -> go ty && go ki
-      HsFunTy _ ty1 ty2              -> go ty1 && go ty2
+      HsFunTy _ m ty1 ty2            -> go_m m && go ty1 && go ty2
       HsListTy _ ty                  -> go ty
       HsTupleTy _ _ tys              -> gos tys
       HsSumTy _ tys                  -> gos tys
@@ -286,6 +287,10 @@ no_anon_wc lty = go lty
       HsTyVar{} -> True
       HsStarTy{} -> True
       XHsType{} -> True      -- Core type, which does not have any wildcard
+
+    go_m HsMatchable                = True
+    go_m HsUnmatchable              = True
+    go_m (HsExplicitMatchability m) = go m
 
     gos = all go
 
@@ -424,7 +429,7 @@ tcPatSynSig name sig_ty
 
        -- arguments become the types of binders. We thus cannot allow
        -- levity polymorphism here
-       ; let (arg_tys, _) = tcSplitFunTys body_ty'
+       ; let (unzip->(_, arg_tys), _) = tcSplitFunTys body_ty'
        ; mapM_ (checkForLevPoly empty) arg_tys
 
        ; traceTc "tcTySig }" $
@@ -449,9 +454,9 @@ tcPatSynSig name sig_ty
     build_patsyn_type kvs imp univ req ex prov body
       = mkInvForAllTys kvs $
         mkSpecForAllTys (imp ++ univ) $
-        mkFunTys req $
+        mkFunTysU req $
         mkSpecForAllTys ex $
-        mkFunTys prov $
+        mkFunTysU prov $
         body
 tcPatSynSig _ (XHsImplicitBndrs _) = panic "tcPatSynSig"
 

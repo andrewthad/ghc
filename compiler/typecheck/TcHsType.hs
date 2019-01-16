@@ -5,7 +5,7 @@
 \section[TcMonoType]{Typechecking user-specified @MonoTypes@}
 -}
 
-{-# LANGUAGE CPP, TupleSections, MultiWayIf, RankNTypes #-}
+{-# LANGUAGE CPP, TupleSections, MultiWayIf, RankNTypes, ViewPatterns #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE TypeFamilies #-}
 
@@ -44,7 +44,7 @@ module TcHsType (
         failIfEmitsConstraints,
         solveEqualities, -- useful re-export
 
-        typeLevelMode, kindLevelMode,
+        typeLevelMode, kindLevelMode, patternMode,
 
         kindGeneralize, checkExpectedKind, RequireSaturation(..),
         reportFloatingKvs,
@@ -291,7 +291,7 @@ tcHsDeriv hs_ty
                               -- with "illegal deriving", below
                tcTopLHsType hs_ty AnyKind
        ; let (tvs, pred)    = splitForAllTys ty
-             (kind_args, _) = splitFunTys (typeKind pred)
+             (unzip -> (_, kind_args), _) = splitFunTys (typeKind pred)
        ; case getClassPredTys_maybe pred of
            Just (cls, tys) -> return (tvs, (cls, tys, kind_args))
            Nothing -> failWithTc (text "Illegal deriving item" <+> quotes (ppr hs_ty)) }
@@ -455,22 +455,43 @@ data RequireSaturation
   = YesSaturation
   | NoSaturation   -- e.g. during a call to GHCi's :kind
 
--- | Info about the context in which we're checking a type. Currently,
--- differentiates only between types and kinds, but this will likely
--- grow, at least to include the distinction between patterns and
--- not-patterns.
+-- | Are we in a pattern?
+-- See Note [Checking patterns]
+data IsPattern
+  = YesPattern
+  | NoPattern
+  deriving Eq
+
+-- | Info about the context in which we're checking a type.
 data TcTyMode
   = TcTyMode { mode_level :: TypeOrKind
              , mode_sat   :: RequireSaturation
+             , mode_pat   :: IsPattern
              }
  -- The mode_unsat field is solely so that type families/synonyms can be unsaturated
  -- in GHCi :kind calls
 
 typeLevelMode :: TcTyMode
-typeLevelMode = TcTyMode { mode_level = TypeLevel, mode_sat = YesSaturation }
+typeLevelMode = TcTyMode
+  { mode_level = TypeLevel
+  , mode_sat   = YesSaturation
+  , mode_pat   = NoPattern
+  }
 
 kindLevelMode :: TcTyMode
-kindLevelMode = TcTyMode { mode_level = KindLevel, mode_sat = YesSaturation }
+kindLevelMode = TcTyMode
+  { mode_level = KindLevel
+  , mode_sat   = YesSaturation
+  , mode_pat   = NoPattern
+  }
+
+patternMode :: TcTyMode
+patternMode = TcTyMode
+  { mode_level = TypeLevel
+  , mode_sat   = YesSaturation
+  , mode_pat   = YesPattern
+  }
+
 
 allowUnsaturated :: TcTyMode -> TcTyMode
 allowUnsaturated mode = mode { mode_sat = NoSaturation }
@@ -562,6 +583,23 @@ are used within tc_hs_type:
 (IT6) If (ty, ki) <- tcTyVar ..., then zonk ki == ki.
       (In other words, the result kind of tcTyVar is zonked.)
 
+Note [Checking patterns]
+~~~~~~~~~~~~~~~~~~~~~~~~
+
+Checking valid applications (in tcInferApps) depends on whether
+we're in a pattern or not.
+
+Given (f :: * ~> *) and (x :: *), is (f x) a valid application form?
+It is, unless we're in a pattern:
+
+  type family Split f where
+    Split ((f :: * ~> *) a) = a
+
+if this pattern was allowed, no application form could unify with it
+anyway, so it's better to report it at the definition site.
+
+TODO (csongor): the above type family actually loops the compiler somewhere
+
 -}
 
 ------------------------------------------
@@ -631,20 +669,30 @@ tc_lhs_type mode (L span ty) exp_kind
     tc_hs_type mode ty exp_kind
 
 ------------------------------------------
-tc_fun_type :: TcTyMode -> LHsType GhcRn -> LHsType GhcRn -> TcKind
-            -> TcM TcType
-tc_fun_type mode ty1 ty2 exp_kind = case mode_level mode of
+
+tc_lhs_matchability :: TcTyMode -> LHsMatchability GhcRn -> TcM TcMatchability
+tc_lhs_matchability mode m = case m of
+  HsMatchable              -> return matchableDataConTy
+  HsUnmatchable            -> return unmatchableDataConTy
+  HsExplicitMatchability m -> tc_lhs_type mode m matchabilityTy
+
+------------------------------------------
+tc_fun_type :: TcTyMode -> LHsMatchability GhcRn
+            -> LHsType GhcRn -> LHsType GhcRn -> TcKind -> TcM TcType
+tc_fun_type mode m ty1 ty2 exp_kind = case mode_level mode of
   TypeLevel ->
     do { arg_k <- newOpenTypeKind
        ; res_k <- newOpenTypeKind
+       ; m'   <- tc_lhs_matchability mode m
        ; ty1' <- tc_lhs_type mode ty1 arg_k
        ; ty2' <- tc_lhs_type mode ty2 res_k
-       ; checkExpectedKindMode mode (ppr $ HsFunTy noExt ty1 ty2) (mkFunTy ty1' ty2')
+       ; checkExpectedKindMode mode (ppr $ HsFunTy noExt m ty1 ty2) (mkFunTy m' ty1' ty2')
                            liftedTypeKind exp_kind }
   KindLevel ->  -- no representation polymorphism in kinds. yet.
     do { ty1' <- tc_lhs_type mode ty1 liftedTypeKind
        ; ty2' <- tc_lhs_type mode ty2 liftedTypeKind
-       ; checkExpectedKindMode mode (ppr $ HsFunTy noExt ty1 ty2) (mkFunTy ty1' ty2')
+       ; m'   <- tc_lhs_matchability mode m
+       ; checkExpectedKindMode mode (ppr $ HsFunTy noExt m ty1 ty2) (mkFunTy m' ty1' ty2')
                            liftedTypeKind exp_kind }
 
 ------------------------------------------
@@ -686,12 +734,12 @@ tc_hs_type _ ty@(HsSpliceTy {}) _exp_kind
   = failWithTc (text "Unexpected type splice:" <+> ppr ty)
 
 ---------- Functions and applications
-tc_hs_type mode (HsFunTy _ ty1 ty2) exp_kind
-  = tc_fun_type mode ty1 ty2 exp_kind
+tc_hs_type mode (HsFunTy _ m ty1 ty2) exp_kind
+  = tc_fun_type mode m ty1 ty2 exp_kind
 
 tc_hs_type mode (HsOpTy _ ty1 (L _ op) ty2) exp_kind
   | op `hasKey` funTyConKey
-  = tc_fun_type mode ty1 ty2 exp_kind
+  = tc_fun_type mode HsMatchable ty1 ty2 exp_kind
 
 --------- Foralls
 tc_hs_type mode forall@(HsForAllTy { hst_bndrs = hs_tvs, hst_body = ty }) exp_kind
@@ -977,13 +1025,13 @@ tcInferApps mode orig_hs_ty fun_ty fun_ki orig_hs_args
                                        tyCoVarsOfType fun_ki
     (orig_ki_binders, orig_inner_ki) = tcSplitPiTys fun_ki
 
-    go :: Int             -- the # of the next argument
-       -> TCvSubst        -- instantiating substitution
-       -> TcType          -- function applied to some args
-       -> [TyBinder]      -- binders in function kind (both vis. and invis.)
-       -> TcKind          -- function kind body (not a Pi-type)
-       -> [LHsTypeArg GhcRn] -- un-type-checked args
-       -> TcM (TcType, TcKind)  -- same as overall return type
+    go :: Int                          -- the # of the next argument
+       -> TCvSubst                     -- instantiating substitution
+       -> TcType                       -- function applied to some args
+       -> [(TcMatchability, TyBinder)] -- binders in function kind (both vis. and invis.)
+       -> TcKind                       -- function kind body (not a Pi-type)
+       -> [LHsTypeArg GhcRn]           -- un-type-checked args
+       -> TcM (TcType, TcKind)         -- same as overall return type
 
       -- no user-written args left. We're done!
     go _ subst fun ki_binders inner_ki []
@@ -993,7 +1041,7 @@ tcInferApps mode orig_hs_ty fun_ty fun_ki orig_hs_args
     go n subst fun all_kindbinder inner_ki (HsArgPar _:args)
       = go n subst fun all_kindbinder inner_ki args
       -- The function's kind has a binder. Is it visible or invisible?
-    go n subst fun all_kindbinder@(ki_binder:ki_binders) inner_ki
+    go n subst fun all_kindbinder@((_, ki_binder):ki_binders) inner_ki
        all_args@(arg:args)
       | Specified <- tyCoBinderArgFlag ki_binder
       , HsTypeArg ki <- arg
@@ -1061,12 +1109,12 @@ tcInferApps mode orig_hs_ty fun_ty fun_ki orig_hs_args
         (HsValArg _)
          -- Even after substituting, still no binders. Use matchExpectedFunKind
          -> do { traceTc "tcInferApps (no binder)" (ppr new_inner_ki $$ ppr zapped_subst)
-               ; (co, arg_k, res_k) <- matchExpectedFunKind hs_ty substed_inner_ki
-               ; let new_in_scope = tyCoVarsOfTypes [arg_k, res_k]
+               ; (co, m, arg_k, res_k) <- matchExpectedFunKind (mode_pat mode == YesPattern) hs_ty substed_inner_ki
+               ; let new_in_scope = tyCoVarsOfTypes [m, arg_k, res_k]
                      subst'       = zapped_subst `extendTCvInScopeSet` new_in_scope
                ; go n subst'
                     (fun `mkNakedCastTy` co)  -- See Note [The well-kinded type invariant]
-                    [mkAnonBinder arg_k]
+                    [(m, mkAnonBinder arg_k)]
                     res_k all_args }
         (HsTypeArg ki) -> ty_app_err ki substed_inner_ki
         (HsArgPar _) -> go n subst fun [] inner_ki args
@@ -1670,7 +1718,7 @@ kcLHsQTyVars_Cusk name flav
 
        ; let inf_candidates = candidates `delCandidates` spec_req_tkvs
 
-       ; inferred <- quantifyTyVars emptyVarSet inf_candidates
+       ; inferred <- quantifyTyVars True emptyVarSet inf_candidates
                      -- NB: 'inferred' comes back sorted in dependency order
 
        ; scoped_kvs <- mapM zonkTyCoVarKind scoped_kvs
@@ -1702,6 +1750,11 @@ kcLHsQTyVars_Cusk name flav
        ; let unmentioned_kvs   = filterOut (`elemVarSet` mentioned_kv_set) specified
        ; reportFloatingKvs name flav (map binderVar final_tc_binders) unmentioned_kvs
 
+       ; let matchability
+              = if tcFlavourCanBeUnsaturated flav
+                then matchableDataConTy
+                else unmatchableDataConTy
+
 
        ; traceTc "kcLHsQTyVars: cusk" $
          vcat [ text "name" <+> ppr name
@@ -1715,8 +1768,9 @@ kcLHsQTyVars_Cusk name flav
               , text "inferred" <+> ppr inferred
               , text "specified" <+> ppr specified
               , text "final_tc_binders" <+> ppr final_tc_binders
+              , text "matchability" <+> ppr matchability
               , text "mkTyConKind final_tc_bndrs res_kind"
-                <+> ppr (mkTyConKind final_tc_binders res_kind)
+                <+> ppr (mkTyConKind matchability final_tc_binders res_kind)
               , text "all_tv_prs" <+> ppr all_tv_prs ]
 
        ; return tycon }
@@ -1755,10 +1809,15 @@ kcLHsQTyVars_NonCusk name flav
                                False -- not yet generalised
                                flav
 
+       ; let matchability
+              = if tcFlavourCanBeUnsaturated flav
+                then matchableDataConTy
+                else unmatchableDataConTy
+
        ; traceTc "kcLHsQTyVars: not-cusk" $
          vcat [ ppr name, ppr kv_ns, ppr hs_tvs, ppr dep_names
-              , ppr scoped_kvs
-              , ppr tc_tvs, ppr (mkTyConKind tc_binders res_kind) ]
+              , ppr scoped_kvs, ppr matchability
+              , ppr tc_tvs, ppr (mkTyConKind matchability tc_binders res_kind) ]
        ; return tycon }
   where
     ctxt_kind | tcFlavourIsOpen flav = TheKind liftedTypeKind
@@ -2069,7 +2128,7 @@ kindGeneralize kind_or_type
        ; gbl_tvs <- tcGetGlobalTyCoVars -- Already zonked
        ; traceTc "kindGeneralize" (vcat [ ppr kind_or_type
                                         , ppr dvs ])
-       ; quantifyTyVars gbl_tvs dvs }
+       ; quantifyTyVars True gbl_tvs dvs }
 
 -- | This variant of 'kindGeneralize' refuses to generalize over any
 -- variables free in the given WantedConstraints. Instead, it promotes
@@ -2101,7 +2160,7 @@ kindGeneralizeLocal wanted kind_or_type
               , text "mono_tvs:" <+> pprTyVars (nonDetEltsUniqSet mono_tvs)
               , text "dvs:" <+> ppr dvs ]
 
-       ; quantifyTyVars mono_tvs dvs }
+       ; quantifyTyVars True mono_tvs dvs }
 
 {- Note [Levels and generalisation]
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -2198,7 +2257,7 @@ etaExpandAlgTyCon tc_bndrs kind
       = case splitPiTy_maybe kind of
           Nothing -> (reverse acc, substTy subst kind)
 
-          Just (Anon arg, kind')
+          Just (_, Anon arg, kind')
             -> go loc occs' uniqs' subst' (tcb : acc) kind'
             where
               arg'   = substTy subst arg
@@ -2208,7 +2267,7 @@ etaExpandAlgTyCon tc_bndrs kind
               (uniq:uniqs') = uniqs
               (occ:occs')   = occs
 
-          Just (Named (Bndr tv vis), kind')
+          Just (_, Named (Bndr tv vis), kind')
             -> go loc occs uniqs subst' (tcb : acc) kind'
             where
               (subst', tv') = substTyVarBndr subst tv
@@ -2231,7 +2290,7 @@ tcbVisibilities tc orig_args
       = []
 
     go fun_kind subst all_args@(arg : args)
-      | Just (tcb, inner_kind) <- splitPiTy_maybe fun_kind
+      | Just (_, tcb, inner_kind) <- splitPiTy_maybe fun_kind
       = case tcb of
           Anon _              -> AnonTCB      : go inner_kind subst  args
           Named (Bndr tv vis) -> NamedTCB vis : go inner_kind subst' args

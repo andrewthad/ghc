@@ -464,6 +464,7 @@ pprPatSynType (MkPatSyn { psUnivTyVars = univ_tvs,  psReqTheta  = req_theta
         , pprType sigma_ty ]
   where
     sigma_ty = mkForAllTys ex_tvs  $
-               mkFunTys prov_theta $
-               mkFunTys orig_args orig_res_ty
+               mkFunTys (matchables prov_theta) $
+               mkFunTys (matchables orig_args) orig_res_ty
     insert_empty_ctxt = null req_theta && not (null prov_theta && null ex_tvs)
+    matchables = zip (repeat matchableDataConTy)

@@ -1814,7 +1814,7 @@ reifyType (LitTy t)         = do { r <- reifyTyLit t; return (TH.LitT r) }
 reifyType (TyVarTy tv)      = return (TH.VarT (reifyName tv))
 reifyType (TyConApp tc tys) = reify_tc_app tc tys   -- Do not expand type synonyms here
 reifyType ty@(AppTy {})     = do
-  let (ty_head, ty_args) = splitAppTys ty
+  let (ty_head, ty_args) = splitAppTys False ty
   ty_head' <- reifyType ty_head
   ty_args' <- reifyTypes (filter_out_invisible_args ty_head ty_args)
   pure $ mkThAppTs ty_head' ty_args'
@@ -1830,7 +1830,7 @@ reifyType ty@(AppTy {})     = do
     filter_out_invisible_args ty_head ty_args =
       filterByList (map isVisibleArgFlag $ appTyArgFlags ty_head ty_args)
                    ty_args
-reifyType ty@(FunTy t1 t2)
+reifyType ty@(FunTy m t1 t2) -- TODO (csongor)
   | isPredTy t1 = reify_for_all ty  -- Types like ((?x::Int) => Char -> Char)
   | otherwise   = do { [r1,r2] <- reifyTypes [t1,t2] ; return (TH.ArrowT `TH.AppT` r1 `TH.AppT` r2) }
 reifyType (CastTy t _)      = reifyType t -- Casts are ignored in TH
@@ -1862,7 +1862,7 @@ reifyPatSynType (univTyVars, req, exTyVars, prov, argTys, resTy)
        ; req'        <- reifyCxt req
        ; exTyVars'   <- reifyTyVars exTyVars
        ; prov'       <- reifyCxt prov
-       ; tau'        <- reifyType (mkFunTys argTys resTy)
+       ; tau'        <- reifyType (mkFunTysU argTys resTy)
        ; return $ TH.ForallT univTyVars' req'
                 $ TH.ForallT exTyVars' prov' tau' }
 
@@ -2028,7 +2028,7 @@ reify_tc_app tc tys
       | otherwise
       = let (dropped_binders, remaining_binders)
               = splitAtList  tys tc_binders
-            result_kind  = mkTyConKind remaining_binders tc_res_kind
+            result_kind  = mkTyConKind undefined remaining_binders tc_res_kind -- TODO (csongor)
             result_vars  = tyCoVarsOfType result_kind
             dropped_vars = fvVarSet $
                            mapUnionFV injectiveVarsOfBinder dropped_binders

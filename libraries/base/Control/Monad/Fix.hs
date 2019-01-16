@@ -1,5 +1,6 @@
 {-# LANGUAGE Trustworthy #-}
 {-# LANGUAGE NoImplicitPrelude #-}
+{-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE TypeOperators #-}
 
 -----------------------------------------------------------------------------
@@ -88,7 +89,7 @@ instance MonadFix IO where
     mfix = fixIO
 
 -- | @since 2.01
-instance MonadFix ((->) r) where
+instance MonadFix ((~>) r) where
     mfix f = \ r -> let a = f a r in a
 
 -- | @since 4.3.0.0

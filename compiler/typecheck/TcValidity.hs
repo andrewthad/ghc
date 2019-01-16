@@ -511,8 +511,9 @@ check_type env ctxt rank ty
              | otherwise  = liftedTypeKind
         -- If there are any constraints, the kind is *. (#11405)
 
-check_type env ctxt rank (FunTy arg_ty res_ty)
-  = do  { check_type env ctxt arg_rank arg_ty
+check_type env ctxt rank (FunTy m arg_ty res_ty)
+  = do  { check_type env ctxt arg_rank m -- TODO (csongor): check kind
+        ; check_type env ctxt arg_rank arg_ty
         ; check_type env ctxt res_rank res_ty }
   where
     (arg_rank, res_rank) = funArgResRank rank
@@ -552,8 +553,12 @@ check_syn_tc_app env ctxt rank ty tc tys
                            -- See Note [Unsaturated type synonyms in GHCi]
   = mapM_ check_arg tys
 
-  | otherwise
-  = failWithTc (tyConArityErr tc tys)
+  | otherwise -- Unsaturated
+  = do { -- See Note [Unsaturated type families]
+       ; unsaturated <- xoptM LangExt.UnsaturatedTypeFamilies
+       ; if unsaturated then
+              mapM_ check_arg tys
+         else failWithTc (tyConArityErr tc tys) }
   where
     tc_arity  = tyConArity tc
     check_arg
@@ -566,6 +571,16 @@ check_syn_tc_app env ctxt rank ty tc tys
           -- unsaturated synonyms are no longer allowed).
           -- See Note [Unsaturated type synonyms in GHCi]
       | otherwise          = ctxt
+
+
+{-
+Note [Unsaturated type families]
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+When -XUnsaturatedTypeFamilies is enabled, we allow type family applications
+where the number of arguments is less than the arity of the type family.
+
+-}
 
 {-
 Note [Unsaturated type synonyms in GHCi]
@@ -1362,8 +1377,10 @@ tcInstHeadTyAppAllTyVars :: Type -> Bool
 -- Used in Haskell-98 mode, for the argument types of an instance head
 -- These must be a constructor applied to type variable arguments
 -- or a type-level literal.
--- But we allow kind instantiations.
+-- But we allow kind instantiations, and matchability instantiations.
 tcInstHeadTyAppAllTyVars ty
+  | Just (_, f, a) <- tcSplitFunTy_maybe (dropCasts ty)
+  = ok [f, a]
   | Just (tc, tys) <- tcSplitTyConApp_maybe (dropCasts ty)
   = ok (filterOutInvisibleTypes tc tys)  -- avoid kinds
   | LitTy _ <- ty = True  -- accept type literals (Trac #13833)
@@ -1383,7 +1400,7 @@ dropCasts :: Type -> Type
 -- To consider: drop only HoleCo casts
 dropCasts (CastTy ty _)     = dropCasts ty
 dropCasts (AppTy t1 t2)     = mkAppTy (dropCasts t1) (dropCasts t2)
-dropCasts (FunTy t1 t2)     = mkFunTy (dropCasts t1) (dropCasts t2)
+dropCasts (FunTy m t1 t2)   = mkFunTy (dropCasts m) (dropCasts t1) (dropCasts t2)
 dropCasts (TyConApp tc tys) = mkTyConApp tc (map dropCasts tys)
 dropCasts (ForAllTy b ty)   = ForAllTy (dropCastsB b) (dropCasts ty)
 dropCasts ty                = ty  -- LitTy, TyVarTy, CoercionTy
@@ -1809,7 +1826,8 @@ checkValidTyFamEqn fam_tc qvs typats rhs
 
          -- We have a decidable instance unless otherwise permitted
        ; undecidable_ok <- xoptM LangExt.UndecidableInstances
-       ; traceTc "checkVTFE" (ppr fam_tc $$ ppr rhs $$ ppr (tcTyFamInsts rhs))
+       --; traceTc "checkVTFE" (ppr fam_tc $$ ppr rhs $$ ppr (tcTyFamInsts rhs))
+       ; traceTc "checkVTFE" (ppr fam_tc $$ ppr rhs) -- TODO (csongor): the above loops. Did I forget to zonk something?
        ; unless undecidable_ok $
          mapM_ addErrTc (checkFamInstRhs fam_tc typats (tcTyFamInsts rhs)) }
 
@@ -2350,7 +2368,7 @@ fvType (TyVarTy tv)          = [tv]
 fvType (TyConApp _ tys)      = fvTypes tys
 fvType (LitTy {})            = []
 fvType (AppTy fun arg)       = fvType fun ++ fvType arg
-fvType (FunTy arg res)       = fvType arg ++ fvType res
+fvType (FunTy m arg res)     = fvType m ++ fvType arg ++ fvType res
 fvType (ForAllTy (Bndr tv _) ty)
   = fvType (tyVarKind tv) ++
     filter (/= tv) (fvType ty)
@@ -2367,7 +2385,7 @@ sizeType (TyVarTy {})      = 1
 sizeType (TyConApp tc tys) = 1 + sizeTyConAppArgs tc tys
 sizeType (LitTy {})        = 1
 sizeType (AppTy fun arg)   = sizeType fun + sizeType arg
-sizeType (FunTy arg res)   = sizeType arg + sizeType res + 1
+sizeType (FunTy m arg res) = sizeType m + sizeType arg + sizeType res + 1
 sizeType (ForAllTy _ ty)   = sizeType ty
 sizeType (CastTy ty _)     = sizeType ty
 sizeType (CoercionTy _)    = 0

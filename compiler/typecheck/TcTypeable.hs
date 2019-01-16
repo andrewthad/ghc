@@ -432,7 +432,7 @@ typeIsTypeable ty
   | isJust (kindRep_maybe ty)       = True
 typeIsTypeable (TyVarTy _)          = True
 typeIsTypeable (AppTy a b)          = typeIsTypeable a && typeIsTypeable b
-typeIsTypeable (FunTy a b)          = typeIsTypeable a && typeIsTypeable b
+typeIsTypeable (FunTy m a b)        = typeIsTypeable m && typeIsTypeable a && typeIsTypeable b
 typeIsTypeable (TyConApp tc args)   = tyConIsTypeable tc
                                    && all typeIsTypeable args
 typeIsTypeable (ForAllTy{})         = False
@@ -460,8 +460,8 @@ liftTc = KindRepM . lift
 builtInKindReps :: [(Kind, Name)]
 builtInKindReps =
     [ (star, starKindRepName)
-    , (mkFunTy star star, starArrStarKindRepName)
-    , (mkFunTys [star, star] star, starArrStarArrStarKindRepName)
+    , (mkFunTyM star star, starArrStarKindRepName)
+    , (mkFunTysM [star, star] star, starArrStarArrStarKindRepName)
     ]
   where
     star = liftedTypeKind
@@ -584,11 +584,18 @@ mkKindRepRhs stuff@(Stuff {..}) in_scope = new_kind_rep
     new_kind_rep (ForAllTy (Bndr var _) ty)
       = pprPanic "mkTyConKindRepBinds(ForAllTy)" (ppr var $$ ppr ty)
 
-    new_kind_rep (FunTy t1 t2)
+    new_kind_rep (FunTy _ t1 t2)
       = do rep1 <- getKindRep stuff in_scope t1
            rep2 <- getKindRep stuff in_scope t2
            return $ nlHsDataCon kindRepFunDataCon
                     `nlHsApp` rep1 `nlHsApp` rep2
+
+    -- new_kind_rep (FunTy m t1 t2)
+    --   = do repm <- getKindRep stuff in_scope t1
+    --        rep1 <- getKindRep stuff in_scope t1
+    --        rep2 <- getKindRep stuff in_scope t2
+    --        return $ nlHsDataCon kindRepFunDataCon
+    --                 `nlHsApp` repm `nlHsApp` rep1 `nlHsApp` rep2
 
     new_kind_rep (LitTy (NumTyLit n))
       = return $ nlHsDataCon kindRepTypeLitSDataCon

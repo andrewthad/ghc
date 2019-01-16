@@ -555,7 +555,7 @@ generaliseTcTyCon tc
        ; let full_dvs = dvs { dv_tvs = mkDVarSet tc_tvs }
 
        -- Step 2: quantify, mainly meaning skolemise the free variables
-       ; qtkvs <- quantifyTyVars emptyVarSet full_dvs
+       ; qtkvs <- quantifyTyVars True emptyVarSet full_dvs
                   -- Returned 'qtkvs' are scope-sorted and skolemised
 
        -- Step 3: find the final identity of the Specified and Required tc_tvs
@@ -1883,7 +1883,7 @@ tcTyFamInstEqnGuts fam_tc mb_clsinfo imp_vars exp_bndrs hs_pats hs_rhs_ty
        -- check there too!
        ; let scoped_tvs = imp_tvs ++ exp_tvs
        ; dvs  <- candidateQTyVarsOfTypes (lhs_ty : mkTyVarTys scoped_tvs)
-       ; qtvs <- quantifyTyVars emptyVarSet dvs
+       ; qtvs <- quantifyTyVars False emptyVarSet dvs
 
        ; (ze, qtvs) <- zonkTyBndrs qtvs
        ; lhs_ty     <- zonkTcTypeToTypeX ze lhs_ty
@@ -1950,7 +1950,7 @@ tcFamTyPats fam_tc hs_pats
                                 setXOptM LangExt.PartialTypeSignatures $
                                 -- See Note [Wildcards in family instances] in
                                 -- RnSource.hs
-                                tcInferApps typeLevelMode lhs_fun fun_ty
+                                tcInferApps patternMode lhs_fun fun_ty
                                             fam_kind hs_pats
 
        ; traceTc "End tcFamTyPats }" $
@@ -2190,8 +2190,8 @@ tcConDecl rep_tycon tag_map tmpl_bndrs res_tmpl
 
        ; kvs <- kindGeneralize (mkSpecForAllTys (binderVars tmpl_bndrs) $
                                 mkSpecForAllTys exp_tvs $
-                                mkFunTys ctxt $
-                                mkFunTys arg_tys $
+                                mkFunTysU ctxt $
+                                mkFunTysU arg_tys $
                                 unitTy)
                  -- That type is a lie, of course. (It shouldn't end in ()!)
                  -- And we could construct a proper result type from the info
@@ -2265,8 +2265,8 @@ tcConDecl rep_tycon tag_map tmpl_bndrs res_tmpl
        ; let user_tvs = imp_tvs ++ exp_tvs
 
        ; tkvs <- kindGeneralize (mkSpecForAllTys user_tvs $
-                                 mkFunTys ctxt $
-                                 mkFunTys arg_tys $
+                                 mkFunTysU ctxt $
+                                 mkFunTysU arg_tys $
                                  res_ty)
 
              -- Zonk to Types
@@ -3588,8 +3588,9 @@ checkValidRoles tc
       =  check_ty_roles env role    ty1
       >> check_ty_roles env Nominal ty2
 
-    check_ty_roles env role (FunTy ty1 ty2)
-      =  check_ty_roles env role ty1
+    check_ty_roles env role (FunTy m ty1 ty2)
+      =  check_ty_roles env Nominal m
+      >> check_ty_roles env role ty1
       >> check_ty_roles env role ty2
 
     check_ty_roles env role (ForAllTy (Bndr tv _) ty)
@@ -3752,7 +3753,7 @@ badDataConTyCon data_con res_ty_tmpl actual_res_ty
     (actual_res_tvs, actual_res_theta, actual_res_rho)
       = tcSplitNestedSigmaTys actual_res_ty
     suggested_ty = mkSpecForAllTys (actual_ex_tvs ++ actual_res_tvs) $
-                   mkFunTys (actual_theta ++ actual_res_theta)
+                   mkFunTysU (actual_theta ++ actual_res_theta)
                    actual_res_rho
 
 badGadtDecl :: Name -> SDoc

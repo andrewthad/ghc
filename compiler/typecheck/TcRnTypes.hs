@@ -2230,7 +2230,7 @@ getUserTypeErrorMsg ct = findUserTypeError (ctPred ct)
                              : map findUserTypeError (subTys t)
                              )
 
-  subTys t            = case splitAppTys t of
+  subTys t            = case splitAppTys False t of
                           (t,[]) ->
                             case splitTyConApp_maybe t of
                               Nothing     -> []
@@ -2772,7 +2772,7 @@ wrapTypeWithImplication ty impl = wrapType ty mentioned_skols givens
           mentioned_skols = filter (`elemVarSet` freeVars) skols
 
 wrapType :: Type -> [TyVar] -> [PredType] -> Type
-wrapType ty skols givens = mkSpecForAllTys skols $ mkFunTys givens ty
+wrapType ty skols givens = mkSpecForAllTys skols $ mkFunTysU givens ty
 
 
 {-

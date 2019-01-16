@@ -1326,6 +1326,8 @@ instance ToHie (SigContext (LSig GhcRn)) where
 instance ToHie (LHsType GhcRn) where
   toHie x = toHie $ TS (ResolvedScopes []) x
 
+instance ToHie (LHsMatchability GhcRn) where
+
 instance ToHie (TScoped (LHsType GhcRn)) where
   toHie (TS tsc (L span t)) = concatM $ makeNode t span : case t of
       HsForAllTy _ bndrs body ->
@@ -1347,8 +1349,9 @@ instance ToHie (TScoped (LHsType GhcRn)) where
         [ toHie ty
         , toHie $ TS (ResolvedScopes []) ki
         ]
-      HsFunTy _ a b ->
-        [ toHie a
+      HsFunTy _ m a b ->
+        [ toHie m
+        , toHie a
         , toHie b
         ]
       HsListTy _ a ->

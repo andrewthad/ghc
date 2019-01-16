@@ -499,17 +499,18 @@ nlList exprs          = noLoc (ExplicitList noExt Nothing exprs)
 
 nlHsAppTy :: LHsType (GhcPass p) -> LHsType (GhcPass p) -> LHsType (GhcPass p)
 nlHsTyVar :: IdP (GhcPass p)                            -> LHsType (GhcPass p)
-nlHsFunTy :: LHsType (GhcPass p) -> LHsType (GhcPass p) -> LHsType (GhcPass p)
+nlHsFunTy :: LHsMatchability (GhcPass p)
+          -> LHsType (GhcPass p) -> LHsType (GhcPass p) -> LHsType (GhcPass p)
 nlHsParTy :: LHsType (GhcPass p)                        -> LHsType (GhcPass p)
 
 nlHsAppTy f t = noLoc (HsAppTy noExt f (parenthesizeHsType appPrec t))
 nlHsTyVar x   = noLoc (HsTyVar noExt NotPromoted (noLoc x))
-nlHsFunTy a b = noLoc (HsFunTy noExt (parenthesizeHsType funPrec a)
-                                     (parenthesize_fun_tail b))
+nlHsFunTy m a b = noLoc (HsFunTy noExt m (parenthesizeHsType funPrec a)
+                                         (parenthesize_fun_tail b))
   where
-    parenthesize_fun_tail (dL->L loc (HsFunTy ext ty1 ty2))
-      = cL loc (HsFunTy ext (parenthesizeHsType funPrec ty1)
-                           (parenthesize_fun_tail ty2))
+    parenthesize_fun_tail (dL->L loc (HsFunTy ext m ty1 ty2))
+      = cL loc (HsFunTy ext m (parenthesizeHsType funPrec ty1)
+                              (parenthesize_fun_tail ty2))
     parenthesize_fun_tail lty = lty
 nlHsParTy t   = noLoc (HsParTy noExt t)
 
@@ -656,13 +657,13 @@ typeToLHsType ty
   = go ty
   where
     go :: Type -> LHsType GhcPs
-    go ty@(FunTy arg _)
+    go ty@(FunTy _ arg _)
       | isPredTy arg
       , (theta, tau) <- tcSplitPhiTy ty
       = noLoc (HsQualTy { hst_ctxt = noLoc (map go theta)
                         , hst_xqual = noExt
                         , hst_body = go tau })
-    go (FunTy arg res) = nlHsFunTy (go arg) (go res)
+    go (FunTy m arg res) = nlHsFunTy (go_matchability m) (go arg) (go res)
     go ty@(ForAllTy {})
       | (tvs, tau) <- tcSplitForAllTys ty
       = noLoc (HsForAllTy { hst_bndrs = map go_tv tvs
@@ -685,6 +686,15 @@ typeToLHsType ty
         args'  = filterOutInvisibleTypes tc args
     go (CastTy ty _)        = go ty
     go (CoercionTy co)      = pprPanic "toLHsSigWcType" (ppr co)
+
+    go_matchability :: Matchability -> LHsMatchability GhcPs
+    go_matchability ty
+      | isMatchableTy ty
+      = HsMatchable
+      | isUnmatchableTy ty
+      = HsUnmatchable
+      | otherwise
+      = HsExplicitMatchability (go ty)
 
          -- Source-language types have _invisible_ kind arguments,
          -- so we must remove them here (Trac #8563)

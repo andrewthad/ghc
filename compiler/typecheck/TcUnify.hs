@@ -6,7 +6,7 @@
 Type subsumption and unification
 -}
 
-{-# LANGUAGE CPP, MultiWayIf, TupleSections, ScopedTypeVariables #-}
+{-# LANGUAGE CPP, MultiWayIf, TupleSections, ScopedTypeVariables, ViewPatterns #-}
 
 module TcUnify (
   -- Full-blown subsumption
@@ -153,8 +153,8 @@ matchExpectedFunTys herald arity orig_ty thing_inside
     go acc_arg_tys n ty
       | Just ty' <- tcView ty = go acc_arg_tys n ty'
 
-    go acc_arg_tys n (FunTy arg_ty res_ty)
-      = ASSERT( not (isPredTy arg_ty) )
+    go acc_arg_tys n (FunTy m arg_ty res_ty)
+      = ASSERT( not (isPredTy arg_ty) ) -- TODO (csongor): this can be matchable, in which case we want to error.(if 'm' is a variable, we unify with Unmatchable)
         do { (result, wrap_res) <- go (mkCheckExpType arg_ty : acc_arg_tys)
                                       (n-1) res_ty
            ; return ( result
@@ -196,7 +196,7 @@ matchExpectedFunTys herald arity orig_ty thing_inside
            ; result       <- thing_inside (reverse acc_arg_tys ++ more_arg_tys) res_ty
            ; more_arg_tys <- mapM readExpType more_arg_tys
            ; res_ty       <- readExpType res_ty
-           ; let unif_fun_ty = mkFunTys more_arg_tys res_ty
+           ; let unif_fun_ty = mkFunTysU more_arg_tys res_ty
            ; wrap <- tcSubTypeDS AppOrigin GenSigCtxt unif_fun_ty fun_ty
                          -- Not a good origin at all :-(
            ; return (result, wrap) }
@@ -282,8 +282,8 @@ matchActualFunTysPart herald ct_orig mb_thing arity orig_ty
     go n acc_args ty
       | Just ty' <- tcView ty = go n acc_args ty'
 
-    go n acc_args (FunTy arg_ty res_ty)
-      = ASSERT( not (isPredTy arg_ty) )
+    go n acc_args (FunTy m arg_ty res_ty)
+      = ASSERT( not (isPredTy arg_ty) ) -- TODO (csongor): this can be matchable, in which case we want to error.(if 'm' is a variable, we unify with Unmatchable)
         do { (wrap_res, tys, ty_r) <- go (n-1) (arg_ty : acc_args) res_ty
            ; return ( mkWpFun idHsWrapper wrap_res arg_ty ty_r doc
                     , arg_ty : tys, ty_r ) }
@@ -320,17 +320,17 @@ matchActualFunTysPart herald ct_orig mb_thing arity orig_ty
     defer n fun_ty
       = do { arg_tys <- replicateM n newOpenFlexiTyVarTy
            ; res_ty  <- newOpenFlexiTyVarTy
-           ; let unif_fun_ty = mkFunTys arg_tys res_ty
+           ; let unif_fun_ty = mkFunTysU arg_tys res_ty
            ; co <- unifyType mb_thing fun_ty unif_fun_ty
            ; return (mkWpCastN co, arg_tys, res_ty) }
 
     ------------
     mk_ctxt :: [TcSigmaType] -> TcSigmaType -> TidyEnv -> TcM (TidyEnv, MsgDoc)
     mk_ctxt arg_tys res_ty env
-      = do { let ty = mkFunTys arg_tys res_ty
+      = do { let ty = mkFunTysU arg_tys res_ty
            ; (env1, zonked) <- zonkTidyTcType env ty
                    -- zonking might change # of args
-           ; let (zonked_args, _) = tcSplitFunTys zonked
+           ; let (unzip -> (_, zonked_args), _) = tcSplitFunTys zonked
                  n_actual         = length zonked_args
                  (env2, unzonked) = tidyOpenType env1 ty
            ; return ( env2
@@ -421,7 +421,7 @@ matchExpectedAppTy orig_ty
     go ty
       | Just ty' <- tcView ty = go ty'
 
-      | Just (fun_ty, arg_ty) <- tcSplitAppTy_maybe ty
+      | Just (fun_ty, arg_ty) <- tcSplitAppTy_maybe False ty
       = return (mkTcNomReflCo orig_ty, (fun_ty, arg_ty))
 
     go (TyVarTy tv)
@@ -441,7 +441,7 @@ matchExpectedAppTy orig_ty
            ; return (co, (ty1, ty2)) }
 
     orig_kind = tcTypeKind orig_ty
-    kind1 = mkFunTy liftedTypeKind orig_kind
+    kind1 = mkFunTyM liftedTypeKind orig_kind
     kind2 = liftedTypeKind    -- m :: * -> k
                               -- arg type :: *
 
@@ -668,9 +668,9 @@ tc_sub_tc_type eq_orig inst_orig ctxt ty_actual ty_expected
        ; return (sk_wrap <.> inner_wrap) }
   where
     possibly_poly ty
-      | isForAllTy ty                        = True
-      | Just (_, res) <- splitFunTy_maybe ty = possibly_poly res
-      | otherwise                            = False
+      | isForAllTy ty                          = True
+      | Just (_,_, res) <- splitFunTy_maybe ty = possibly_poly res
+      | otherwise                              = False
       -- NB *not* tcSplitFunTy, because here we want
       -- to decompose type-class arguments too
 
@@ -754,7 +754,7 @@ tc_sub_type_ds eq_orig inst_orig ctxt ty_actual ty_expected
     -- caused Trac #12616 because (also bizarrely) 'deriving' code had
     -- -XImpredicativeTypes on.  I deleted the entire case.
 
-    go (FunTy act_arg act_res) (FunTy exp_arg exp_res)
+    go (FunTy act_m act_arg act_res) (FunTy exp_m exp_arg exp_res)
       | not (isPredTy act_arg)
       , not (isPredTy exp_arg)
       = -- See Note [Co/contra-variance of subsumption checking]
@@ -1416,10 +1416,11 @@ uType t_or_k origin orig_ty1 orig_ty2
       | Just ty2' <- tcView ty2 = go ty1  ty2'
 
         -- Functions (or predicate functions) just check the two parts
-    go (FunTy fun1 arg1) (FunTy fun2 arg2)
+    go (FunTy m1 fun1 arg1) (FunTy m2 fun2 arg2)
       = do { co_l <- uType t_or_k origin fun1 fun2
            ; co_r <- uType t_or_k origin arg1 arg2
-           ; return $ mkFunCo Nominal co_l co_r }
+           ; co_m <- uType t_or_k origin m1 m2
+           ; return $ mkFunCo Nominal co_m co_l co_r }
 
         -- Always defer if a type synonym family (type function)
         -- is involved.  (Data families behave rigidly.)
@@ -1446,15 +1447,19 @@ uType t_or_k origin orig_ty1 orig_ty2
         -- Do not decompose FunTy against App;
         -- it's often a type error, so leave it for the constraint solver
     go (AppTy s1 t1) (AppTy s2 t2)
+      | isMatchableFunTy s1
+      , isMatchableFunTy s2
       = go_app (isNextArgVisible s1) s1 t1 s2 t2
 
     go (AppTy s1 t1) (TyConApp tc2 ts2)
       | Just (ts2', t2') <- snocView ts2
+      , isMatchableFunTy s1
       = ASSERT( mightBeUnsaturatedTyCon tc2 )
         go_app (isNextTyConArgVisible tc2 ts2') s1 t1 (TyConApp tc2 ts2') t2'
 
     go (TyConApp tc1 ts1) (AppTy s2 t2)
       | Just (ts1', t1') <- snocView ts1
+      , isMatchableFunTy s2
       = ASSERT( mightBeUnsaturatedTyCon tc1 )
         go_app (isNextTyConArgVisible tc1 ts1') (TyConApp tc1 ts1') t1' s2 t2
 
@@ -1904,6 +1909,24 @@ It would be lovely in the future to revisit this problem and remove this
 extra, unnecessary check. But we retain it for now as it seems to work
 better in practice.
 
+However, we must unify with *unsaturated* type families (when
+-XUnsaturatedTypeFamilies is on)!
+
+Consider
+
+  type family Id a where
+    Id a = a
+
+  foo :: f ~ Id => f Bool
+  foo = False
+
+We have
+
+  [G] f ~ Id
+  [W] f Bool ~ Bool
+
+to make progress, 'f' has to be unified with 'Id'.
+
 Note [Refactoring hazard: checkTauTvUpdate]
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 I (Richard E.) have a sad story about refactoring this code, retained here
@@ -2020,11 +2043,13 @@ we return a made-up TcTyVarDetails, but I think it works smoothly.
 
 -- | Breaks apart a function kind into its pieces.
 matchExpectedFunKind :: Outputable fun
-                     => fun             -- ^ type, only for errors
+                     => Bool            -- ^ True <=> in pattern
+                                        -- See Note [Checking patterns] in TcHsType
+                     -> fun             -- ^ type, only for errors
                      -> TcKind          -- ^ function kind
-                     -> TcM (Coercion, TcKind, TcKind)
-                                  -- ^ co :: old_kind ~ arg -> res
-matchExpectedFunKind hs_ty = go
+                     -> TcM (Coercion, TcMatchability, TcKind, TcKind)
+                                  -- ^ co :: old_kind ~ arg ->{m} res
+matchExpectedFunKind in_pat hs_ty = go
   where
     go k | Just k' <- tcView k = go k'
 
@@ -2035,20 +2060,34 @@ matchExpectedFunKind hs_ty = go
                 Indirect fun_kind -> go fun_kind
                 Flexi ->             defer k }
 
-    go k@(FunTy arg res) = return (mkNomReflCo k, arg, res)
-    go other             = defer other
+    go k@(FunTy m arg res)
+      | in_pat    = do { let origin = TypeEqOrigin { uo_actual   = k
+                                                   , uo_expected = mkFunTyM arg res
+                                                   , uo_thing    = Just (ppr hs_ty)
+                                                   , uo_visible  = True
+                                                   }
+                       ; m_co <- uType TypeLevel origin m matchableDataConTy
+                       ; let co = mkFunCo Nominal m_co (mkNomReflCo arg) (mkNomReflCo res)
+                       ; return (co, matchableDataConTy, arg, res)
+                       }
+      | otherwise = return (mkNomReflCo k, m, arg, res)
+
+    go other               = defer other
 
     defer k
       = do { arg_kind <- newMetaKindVar
            ; res_kind <- newMetaKindVar
-           ; let new_fun = mkFunTy arg_kind res_kind
+           ; m_kind <- if in_pat
+                          then return matchableDataConTy
+                          else newFlexiTyVarTy matchabilityTy
+           ; let new_fun = mkFunTy m_kind arg_kind res_kind
                  origin  = TypeEqOrigin { uo_actual   = k
                                         , uo_expected = new_fun
                                         , uo_thing    = Just (ppr hs_ty)
                                         , uo_visible  = True
                                         }
            ; co <- uType KindLevel origin k new_fun
-           ; return (co, arg_kind, res_kind) }
+           ; return (co, m_kind, arg_kind, res_kind) }
 
 
 {- *********************************************************************
@@ -2196,10 +2235,10 @@ preCheck dflags ty_fam_ok tv ty
            -- See Note [Occurrence checking: look inside kinds]
 
     fast_check (TyConApp tc tys)
-      | bad_tc tc              = OC_Bad
+      | bad_tc tc tys          = OC_Bad
       | otherwise              = mapM fast_check tys >> ok
     fast_check (LitTy {})      = ok
-    fast_check (FunTy a r)     = fast_check a   >> fast_check r
+    fast_check (FunTy m a r)   = fast_check m >> fast_check a   >> fast_check r
     fast_check (AppTy fun arg) = fast_check fun >> fast_check arg
     fast_check (CastTy ty co)  = fast_check ty  >> fast_check_co co
     fast_check (CoercionTy co) = fast_check_co co
@@ -2223,11 +2262,16 @@ preCheck dflags ty_fam_ok tv ty
     fast_check_co co | tv `elemVarSet` tyCoVarsOfCo co = OC_Occurs
                      | otherwise                       = ok
 
-    bad_tc :: TyCon -> Bool
-    bad_tc tc
-      | not (impredicative_ok || isTauTyCon tc)     = True
-      | not (ty_fam_ok        || isFamFreeTyCon tc) = True
-      | otherwise                                   = False
+    bad_tc :: TyCon -> [Type] -> Bool
+    bad_tc tc tys
+      | not (impredicative_ok || isTauTyCon tc)                           = True
+      | not (ty_fam_ok        || isFamFreeTyCon tc || unsaturated tc tys) = True
+      | otherwise                                                         = False
+
+    -- See Note [Prevent unification with type families]
+    unsaturated :: TyCon -> [Type] -> Bool
+    unsaturated tc tys
+      = length tys < tyConArity tc
 
 canUnifyWithPolyType :: DynFlags -> TcTyVarDetails -> Bool
 canUnifyWithPolyType dflags details

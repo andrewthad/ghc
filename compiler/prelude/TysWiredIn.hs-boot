@@ -2,10 +2,10 @@ module TysWiredIn where
 
 import Var( TyVar, ArgFlag )
 import {-# SOURCE #-} TyCon      ( TyCon )
-import {-# SOURCE #-} TyCoRep    (Type, Kind)
+import {-# SOURCE #-} TyCoRep    (Type, Kind, Matchability)
 
 
-mkFunKind :: Kind -> Kind -> Kind
+mkFunKind :: Matchability -> Kind -> Kind -> Kind
 mkForAllKind :: TyVar -> ArgFlag -> Kind -> Kind
 
 listTyCon :: TyCon
@@ -36,6 +36,12 @@ int8ElemRepDataConTy, int16ElemRepDataConTy, int32ElemRepDataConTy,
   int64ElemRepDataConTy, word8ElemRepDataConTy, word16ElemRepDataConTy,
   word32ElemRepDataConTy, word64ElemRepDataConTy, floatElemRepDataConTy,
   doubleElemRepDataConTy :: Type
+
+matchabilityTyCon :: TyCon
+matchabilityTy :: Type
+matchableDataConTy, unmatchableDataConTy :: Type
+matchableDataConTyCon :: TyCon
+unmatchableDataConTyCon :: TyCon
 
 anyTypeOfKind :: Kind -> Type
 unboxedTupleKind :: [Type] -> Type

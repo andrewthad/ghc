@@ -32,6 +32,7 @@ module GHC.Types (
         Nat, Symbol,
         Any,
         type (~~), Coercible,
+        Matchability(..),
         TYPE, RuntimeRep(..), Type, Constraint,
           -- The historical type * should ideally be written as
           -- `type *`, without the parentheses. But that's a true
@@ -369,6 +370,14 @@ you're reading this in 2023 then things went wrong). See #8326.
 -- loops should be aggressively specialized.
 data SPEC = SPEC | SPEC2
 
+
+{- *********************************************************************
+*                                                                      *
+                  Matchability polymorphism
+*                                                                      *
+********************************************************************* -}
+
+data Matchability = Matchable | Unmatchable
 
 {- *********************************************************************
 *                                                                      *

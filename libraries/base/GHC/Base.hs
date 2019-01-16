@@ -74,6 +74,7 @@ GHC.Float       Classes: Floating, RealFloat
 Other Prelude modules are much easier with fewer complex dependencies.
 -}
 
+{-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE Unsafe #-}
 {-# LANGUAGE CPP
            , NoImplicitPrelude
@@ -813,17 +814,17 @@ ap m1 m2          = do { x1 <- m1; x2 <- m2; return (x1 x2) }
 -- instances for Prelude types
 
 -- | @since 2.01
-instance Functor ((->) r) where
+instance Functor ((~>) r) where
     fmap = (.)
 
 -- | @since 2.01
-instance Applicative ((->) a) where
+instance Applicative ((~>) a) where
     pure = const
     (<*>) f g x = f x (g x)
     liftA2 q f g x = q (f x) (g x)
 
 -- | @since 2.01
-instance Monad ((->) r) where
+instance Monad ((~>) r) where
     f >>= k = \ r -> k (f r) r
 
 -- | @since 2.01

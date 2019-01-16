@@ -1,3 +1,4 @@
+{-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE Trustworthy #-}
 {-# LANGUAGE NoImplicitPrelude #-}
 {-# OPTIONS_GHC -Wno-inline-rule-shadowing #-}
@@ -140,7 +141,7 @@ class Category a => Arrow a where
 -- Ordinary functions are arrows.
 
 -- | @since 2.01
-instance Arrow (->) where
+instance Arrow (~>) where
     arr f = f
 --  (f *** g) ~(x,y) = (f x, g y)
 --  sorry, although the above defn is fully H'98, nhc98 can't parse it.
@@ -275,7 +276,7 @@ class Arrow a => ArrowChoice a where
  #-}
 
 -- | @since 2.01
-instance ArrowChoice (->) where
+instance ArrowChoice (~>) where
     left f = f +++ id
     right f = id +++ f
     f +++ g = (Left . f) ||| (Right . g)
@@ -303,7 +304,7 @@ class Arrow a => ArrowApply a where
     app :: a (a b c, b) c
 
 -- | @since 2.01
-instance ArrowApply (->) where
+instance ArrowApply (~>) where
     app (f,x) = f x
 
 -- | @since 2.01
@@ -376,7 +377,7 @@ class Arrow a => ArrowLoop a where
     loop :: a (b,d) (c,d) -> a b c
 
 -- | @since 2.01
-instance ArrowLoop (->) where
+instance ArrowLoop (~>) where
     loop f b = let (c,d) = f (b,d) in c
 
 -- | Beware that for many monads (those for which the '>>=' operation
