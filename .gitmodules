@@ -1,86 +1,86 @@
 [submodule "libraries/binary"]
 	path = libraries/binary
-	url = git://github.com/ghc/packages/binary.git
+	url = git@github.com:kcsongor/packages-binary.git
 	ignore = untracked
 [submodule "libraries/bytestring"]
 	path = libraries/bytestring
-	url = git://github.com/ghc/packages/bytestring.git
+	url = git://github.com/ghc/packages-bytestring.git
 	ignore = untracked
 [submodule "libraries/Cabal"]
 	path = libraries/Cabal
-	url = git://github.com/ghc/packages/Cabal.git
+	url = git://github.com/ghc/packages-Cabal.git
 	ignore = untracked
 [submodule "libraries/containers"]
 	path = libraries/containers
-	url = git://github.com/ghc/packages/containers.git
+	url = git://github.com/ghc/packages-containers.git
 	ignore = untracked
 [submodule "libraries/haskeline"]
 	path = libraries/haskeline
-	url = git://github.com/ghc/packages/haskeline.git
+	url = git://github.com/ghc/packages-haskeline.git
 	ignore = untracked
 [submodule "libraries/pretty"]
 	path = libraries/pretty
-	url = git://github.com/ghc/packages/pretty.git
+	url = git://github.com/ghc/packages-pretty.git
 	ignore = untracked
 [submodule "libraries/terminfo"]
 	path = libraries/terminfo
-	url = git://github.com/ghc/packages/terminfo.git
+	url = git://github.com/ghc/packages-terminfo.git
 	ignore = untracked
 [submodule "libraries/transformers"]
 	path = libraries/transformers
-	url = git://github.com/ghc/packages/transformers.git
+	url = git://github.com/ghc/packages-transformers.git
 	ignore = untracked
 [submodule "libraries/xhtml"]
 	path = libraries/xhtml
-	url = git://github.com/ghc/packages/xhtml.git
+	url = git://github.com/ghc/packages-xhtml.git
 	ignore = untracked
 [submodule "libraries/Win32"]
 	path = libraries/Win32
-	url = git://github.com/ghc/packages/Win32.git
+	url = git://github.com/ghc/packages-Win32.git
 	ignore = untracked
 [submodule "libraries/primitive"]
 	path = libraries/primitive
-	url = git://github.com/ghc/packages/primitive.git
+	url = git://github.com/ghc/packages-primitive.git
 	ignore = untracked
 [submodule "libraries/vector"]
 	path = libraries/vector
-	url = git://github.com/ghc/packages/vector.git
+	url = git://github.com/ghc/packages-vector.git
 	ignore = untracked
 [submodule "libraries/time"]
 	path = libraries/time
-	url = git://github.com/ghc/packages/time.git
+	url = git://github.com/ghc/packages-time.git
 	ignore = untracked
 [submodule "libraries/random"]
 	path = libraries/random
-	url = git://github.com/ghc/packages/random.git
+	url = git://github.com/ghc/packages-random.git
 	ignore = untracked
 [submodule "libraries/array"]
 	path = libraries/array
-	url = git://github.com/ghc/packages/array.git
+	url = git://github.com/ghc/packages-array.git
 	ignore = untracked
 [submodule "libraries/deepseq"]
 	path = libraries/deepseq
-	url = git://github.com/ghc/packages/deepseq.git
+	url = git://github.com/ghc/packages-deepseq.git
 	ignore = untracked
 [submodule "libraries/directory"]
 	path = libraries/directory
-	url = git://github.com/ghc/packages/directory.git
+	url = git://github.com/ghc/packages-directory.git
 	ignore = untracked
 [submodule "libraries/filepath"]
 	path = libraries/filepath
-	url = git://github.com/ghc/packages/filepath.git
+	url = git://github.com/ghc/packages-filepath.git
 	ignore = untracked
 [submodule "libraries/hpc"]
 	path = libraries/hpc
-	url = git://github.com/ghc/packages/hpc.git
+	url = git://github.com/ghc/packages-hpc.git
 	ignore = untracked
 [submodule "libraries/parsec"]
 	path = libraries/parsec
-	url = git://github.com/ghc/packages/parsec.git
+	url = git://github.com/ghc/packages-parsec.git
 	ignore = untracked
 [submodule "libraries/text"]
 	path = libraries/text
-	url = git://github.com/ghc/packages/text.git
+	url = git://github.com/ghc/packages-text.git
 	ignore = untracked
 [submodule "libraries/mtl"]
 	path = libraries/mtl
@@ -88,23 +88,23 @@
 	ignore = untracked
 [submodule "libraries/process"]
 	path = libraries/process
-	url = git://github.com/ghc/packages/process.git
+	url = git://github.com/ghc/packages-process.git
 	ignore = untracked
 [submodule "libraries/unix"]
 	path = libraries/unix
-	url = git://github.com/ghc/packages/unix.git
+	url = git://github.com/ghc/packages-unix.git
 	ignore = untracked
 [submodule "libraries/parallel"]
 	path = libraries/parallel
-	url = git://github.com/ghc/packages/parallel.git
+	url = git://github.com/ghc/packages-parallel.git
 	ignore = untracked
 [submodule "libraries/stm"]
 	path = libraries/stm
-	url = git://github.com/ghc/packages/stm.git
+	url = git://github.com/ghc/packages-stm.git
 	ignore = untracked
 [submodule "libraries/dph"]
 	path = libraries/dph
-	url = git://github.com/ghc/packages/dph.git
+	url = git://github.com/ghc/packages-dph.git
 	ignore = untracked
 [submodule "utils/haddock"]
 	path = utils/haddock
