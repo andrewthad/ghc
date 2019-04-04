@@ -1,0 +1,45 @@
+{-# language DataKinds #-}
+{-# language GADTs #-}
+{-# language KindSignatures #-}
+{-# language TypeFamilies #-}
+{-# language UnsaturatedTypeFamilies #-}
+
+unit i where
+    module I where
+        import Data.Kind (Type)
+        data SingBool :: Bool -> Type where
+          SingTrue :: SingBool 'True
+          SingFalse :: SingBool 'False
+        data FlipFlop :: Bool -> Type where
+          Flip :: Int -> FlipFlop 'True
+          Flop :: Char -> FlipFlop 'False
+
+unit p where
+    dependency i
+    signature H where
+        import I (FlipFlop)
+        data Foo :: Bool ~> Bool
+        x :: FlipFlop (Foo 'False)
+        y :: FlipFlop (Foo 'True)
+    module A where
+        import H
+        import I
+        choose :: SingBool b -> FlipFlop (Foo b)
+        choose SingFalse = x
+        choose SingTrue = y
+
+unit h where
+    dependency i
+    module H where
+        import I
+        type family Foo (b :: Bool) :: Bool where
+          Foo 'True = 'False
+          Foo 'False = 'True
+        x :: FlipFlop 'True
+        x = Flip 5
+        y :: FlipFlop 'False
+        y = Flop 'a'
+
+unit r where
+    dependency h
+    dependency p[H=h:H]
